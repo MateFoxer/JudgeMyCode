@@ -42,6 +42,16 @@ export default async function SharedReviewPage({ params }: PageParams) {
         <p>
           Review #{id} in {review.mode.toUpperCase()} mode.
         </p>
+        <div className="hero-links">
+          <a
+            className="pill"
+            href="https://github.com/MateFoxer/JudgeMyCode"
+            target="_blank"
+            rel="noreferrer"
+          >
+            View on GitHub
+          </a>
+        </div>
       </section>
 
       <section className="card">

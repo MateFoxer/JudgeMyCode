@@ -209,6 +209,16 @@ export default function Home() {
         <p>
           Paste code, choose a mode, and get a brutally honest score.
         </p>
+        <div className="hero-links">
+          <a
+            className="pill"
+            href="https://github.com/MateFoxer/JudgeMyCode"
+            target="_blank"
+            rel="noreferrer"
+          >
+            View on GitHub
+          </a>
+        </div>
       </section>
 
       <section className="card">

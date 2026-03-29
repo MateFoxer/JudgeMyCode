@@ -161,6 +161,12 @@ main {
   max-width: 62ch;
 }
 
+.hero-links {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
 .card {
   border: 1px solid var(--border);
   background: linear-gradient(

@@ -14,32 +14,68 @@ export type StoredReview = {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_FILE = path.join(DATA_DIR, "reviews.json");
+let fileStoreAvailable: boolean | null = null;
+let memoryStore: StoredReview[] = [];
 
-async function ensureStore(): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-
+async function ensureStore(): Promise<boolean> {
   try {
-    await readFile(STORE_FILE, "utf8");
+    await mkdir(DATA_DIR, { recursive: true });
+
+    try {
+      await readFile(STORE_FILE, "utf8");
+    } catch {
+      await writeFile(STORE_FILE, "[]", "utf8");
+    }
+
+    fileStoreAvailable = true;
+    return true;
   } catch {
-    await writeFile(STORE_FILE, "[]", "utf8");
+    fileStoreAvailable = false;
+    return false;
   }
 }
 
 async function readStore(): Promise<StoredReview[]> {
-  await ensureStore();
-  const raw = await readFile(STORE_FILE, "utf8");
+  if (fileStoreAvailable !== false) {
+    const available = await ensureStore();
+    if (available) {
+      const raw = await readFile(STORE_FILE, "utf8");
 
-  try {
-    const parsed = JSON.parse(raw) as StoredReview[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+      try {
+        const parsed = JSON.parse(raw) as StoredReview[];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
   }
+
+  if (memoryStore.length > 0) {
+    return memoryStore;
+  }
+
+  // Serverless runtimes can ship data/reviews.json as read-only. Load it if present.
+  try {
+    const raw = await readFile(STORE_FILE, "utf8");
+    const parsed = JSON.parse(raw) as StoredReview[];
+    memoryStore = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    memoryStore = [];
+  }
+
+  return memoryStore;
 }
 
 async function writeStore(data: StoredReview[]): Promise<void> {
-  await ensureStore();
-  await writeFile(STORE_FILE, JSON.stringify(data, null, 2), "utf8");
+  if (fileStoreAvailable !== false) {
+    const available = await ensureStore();
+    if (available) {
+      await writeFile(STORE_FILE, JSON.stringify(data, null, 2), "utf8");
+      return;
+    }
+  }
+
+  memoryStore = data;
 }
 
 export async function saveReview(input: {

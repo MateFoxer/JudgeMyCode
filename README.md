@@ -28,7 +28,7 @@ npm install
 
 ```bash
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
 ```
 
 3. Start development server:

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { detectLanguage } from "@/lib/language";
-import ThemeToggle from "@/components/ThemeToggle";
+import { CODE_MAX_CHARS } from "@/lib/limits";
 import type { ReviewMode, ReviewResponse } from "@/lib/reviewSchema";
 
 const MODES: Array<{ value: ReviewMode; label: string }> = [
@@ -33,14 +33,99 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<ReviewResponse | null>(null);
+  const audioRef = useRef<AudioContext | null>(null);
+
+  function getAudioContext(): AudioContext | null {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    if (!audioRef.current) {
+      const Ctx = (window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as
+        | typeof AudioContext
+        | undefined;
+      if (!Ctx) {
+        return null;
+      }
+      audioRef.current = new Ctx();
+    }
+
+    if (audioRef.current.state === "suspended") {
+      void audioRef.current.resume();
+    }
+
+    return audioRef.current;
+  }
+
+  function playTone(
+    frequency: number,
+    durationMs: number,
+    volume: number,
+    type: OscillatorType,
+    delayMs = 0
+  ) {
+    const audio = getAudioContext();
+    if (!audio) {
+      return;
+    }
+
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    const startAt = audio.currentTime + delayMs / 1000;
+    const endAt = startAt + durationMs / 1000;
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, startAt);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+    osc.connect(gain);
+    gain.connect(audio.destination);
+    osc.start(startAt);
+    osc.stop(endAt + 0.01);
+  }
+
+  function playUiSound(kind: "tap" | "upload" | "success" | "error" | "copy") {
+    switch (kind) {
+      case "tap":
+        playTone(320, 40, 0.012, "triangle");
+        break;
+      case "upload":
+        playTone(360, 45, 0.011, "triangle");
+        playTone(420, 60, 0.01, "sine", 36);
+        break;
+      case "success":
+        playTone(440, 50, 0.013, "sine");
+        playTone(560, 85, 0.011, "triangle", 46);
+        break;
+      case "error":
+        playTone(260, 65, 0.011, "sawtooth");
+        break;
+      case "copy":
+        playTone(520, 35, 0.011, "triangle");
+        playTone(660, 50, 0.009, "sine", 30);
+        break;
+      default:
+        break;
+    }
+  }
+
   async function copyShareLink(path: string) {
-    const absolute = `${window.location.origin}${path}`;
-    await navigator.clipboard.writeText(absolute);
+    try {
+      const absolute = `${window.location.origin}${path}`;
+      await navigator.clipboard.writeText(absolute);
+      playUiSound("copy");
+    } catch {
+      playUiSound("error");
+    }
   }
 
 
   const categories = useMemo(() => categoryRows(review), [review]);
   const language = useMemo(() => detectLanguage(fileName, code), [fileName, code]);
+  const charCount = code.length;
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -50,14 +135,22 @@ export default function Home() {
 
     if (file.size > 250_000) {
       setError("File too large. Please upload a source file under 250KB.");
+      playUiSound("error");
       return;
     }
 
     const text = await file.text();
+    if (text.length > CODE_MAX_CHARS) {
+      setError(`Code too long. Please keep it under ${CODE_MAX_CHARS.toLocaleString()} characters.`);
+      playUiSound("error");
+      return;
+    }
+
     setCode(text);
     setFileName(file.name);
     setError(null);
     setReview(null);
+    playUiSound("upload");
   }
 
   function onCodeChange(nextCode: string) {
@@ -69,6 +162,7 @@ export default function Home() {
   }
 
   async function runReview() {
+    playUiSound("tap");
     setLoading(true);
     setError(null);
 
@@ -79,14 +173,25 @@ export default function Home() {
         body: JSON.stringify({ code, mode, language }),
       });
 
+      if (res.status === 429) {
+        const retryAfterHeader = res.headers.get("retry-after");
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+        const waitSeconds = Number.isFinite(retryAfterSeconds)
+          ? Math.max(1, Math.ceil(retryAfterSeconds))
+          : 60;
+        throw new Error(`Too many requests, try again in ${waitSeconds} seconds.`);
+      }
+
       const data = (await res.json()) as ReviewResponse | { error: string };
       if (!res.ok || "error" in data) {
         throw new Error("error" in data ? data.error : "Review failed");
       }
 
       setReview(data);
+      playUiSound("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error");
+      playUiSound("error");
     } finally {
       setLoading(false);
     }
@@ -96,12 +201,13 @@ export default function Home() {
     <main>
       <section className="hero">
         <div className="hero-top">
-          <h1>Judge My Code</h1>
-          <ThemeToggle />
+          <h1 className="brand-title">
+            <span>Judge</span> <span>My</span> <span className="brand-accent">Code</span>
+          </h1>
         </div>
+        <p className="hero-kicker">Because your compiler was too kind.</p>
         <p>
-          Paste code, choose a mode, and get a brutally honest score with
-          practical fixes.
+          Paste code, choose a mode, and get a brutally honest score.
         </p>
       </section>
 
@@ -109,10 +215,11 @@ export default function Home() {
         <textarea
           value={code}
           onChange={(event) => onCodeChange(event.target.value)}
+          maxLength={CODE_MAX_CHARS}
           placeholder="Paste your code here"
         />
 
-        <div className="controls">
+        <div className="controls form-controls">
           <label className="mode">
             Upload File
             <input
@@ -126,7 +233,10 @@ export default function Home() {
             Review Mode
             <select
               value={mode}
-              onChange={(event) => setMode(event.target.value as ReviewMode)}
+              onChange={(event) => {
+                setMode(event.target.value as ReviewMode);
+                playUiSound("tap");
+              }}
             >
               {MODES.map((item) => (
                 <option value={item.value} key={item.value}>
@@ -136,13 +246,13 @@ export default function Home() {
             </select>
           </label>
 
-          <button onClick={runReview} disabled={loading || code.trim().length === 0}>
+          <button onClick={runReview} disabled={loading || code.trim().length === 0 || charCount > CODE_MAX_CHARS}>
             {loading ? "Reviewing..." : "Judge It"}
           </button>
         </div>
 
-        <p className="small">
-          {fileName ? `Loaded file: ${fileName}` : "Using pasted text"} | Detected language: {language}
+        <p className={`small${charCount > CODE_MAX_CHARS * 0.9 ? " warn" : ""}`}>
+          {fileName ? `Loaded file: ${fileName}` : "Using pasted text"} | Detected language: {language} | {charCount.toLocaleString()}/{CODE_MAX_CHARS.toLocaleString()} chars
         </p>
       </section>
 

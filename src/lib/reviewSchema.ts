@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { CODE_MAX_CHARS } from "@/lib/limits";
 
 export const reviewModeSchema = z.enum(["faang", "senior", "toxic"]);
 
 export type ReviewMode = z.infer<typeof reviewModeSchema>;
 
 export const reviewRequestSchema = z.object({
-  code: z.string().min(1).max(20000),
+  code: z.string().min(1).max(CODE_MAX_CHARS),
   mode: reviewModeSchema,
   language: z.string().min(1).max(40).optional(),
 });

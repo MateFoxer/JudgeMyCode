@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { MAX_REQUEST_BODY_BYTES } from "@/lib/limits";
 import { generateReview } from "@/lib/providers";
+import { checkRateLimit, getClientKey, type RateLimitDecision } from "@/lib/rateLimit";
 import { saveReview } from "@/lib/reviewStore";
 import {
   reviewCoreSchema,
@@ -8,6 +10,15 @@ import {
 } from "@/lib/reviewSchema";
 
 const DISALLOWED = ["slur", "hate", "kill yourself"];
+
+function buildRateLimitHeaders(decision: RateLimitDecision) {
+  return {
+    "X-RateLimit-Limit": String(decision.limit),
+    "X-RateLimit-Remaining": String(decision.remaining),
+    "X-RateLimit-Reset": String(decision.resetAtEpochSeconds),
+    "Retry-After": String(decision.retryAfterSeconds),
+  };
+}
 
 function moderateText(input: string): { text: string; blocked: boolean } {
   const lowered = input.toLowerCase();
@@ -22,13 +33,32 @@ function moderateText(input: string): { text: string; blocked: boolean } {
 }
 
 export async function POST(request: Request) {
+  const decision = await checkRateLimit(getClientKey(request));
+  const rateLimitHeaders = buildRateLimitHeaders(decision);
+
+  if (!decision.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait and try again." },
+      { status: 429, headers: rateLimitHeaders }
+    );
+  }
+
+  const contentLengthHeader = request.headers.get("content-length");
+  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BODY_BYTES) {
+    return NextResponse.json(
+      { error: "Payload too large." },
+      { status: 413, headers: rateLimitHeaders }
+    );
+  }
+
   try {
     const body = await request.json();
     const parsed = reviewRequestSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid payload", details: parsed.error.flatten() },
-        { status: 400 }
+        { status: 400, headers: rateLimitHeaders }
       );
     }
 
@@ -54,7 +84,7 @@ export async function POST(request: Request) {
     if (!validatedCore.success) {
       return NextResponse.json(
         { error: "Invalid model output", details: validatedCore.error.flatten() },
-        { status: 502 }
+        { status: 502, headers: rateLimitHeaders }
       );
     }
 
@@ -74,13 +104,13 @@ export async function POST(request: Request) {
     if (!validatedResponse.success) {
       return NextResponse.json(
         { error: "Failed to persist review", details: validatedResponse.error.flatten() },
-        { status: 500 }
+        { status: 500, headers: rateLimitHeaders }
       );
     }
 
-    return NextResponse.json(validatedResponse.data);
+    return NextResponse.json(validatedResponse.data, { headers: rateLimitHeaders });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate review";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: rateLimitHeaders });
   }
 }

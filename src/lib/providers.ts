@@ -30,11 +30,15 @@ async function callGeminiProvider(prompt: string, code: string, mode: ReviewMode
     throw new Error("Missing GEMINI_API_KEY");
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
+    signal: controller.signal,
     body: JSON.stringify({
       contents: [
         {
@@ -47,6 +51,8 @@ async function callGeminiProvider(prompt: string, code: string, mode: ReviewMode
         responseMimeType: "application/json",
       },
     }),
+  }).finally(() => {
+    clearTimeout(timeout);
   });
 
   if (!response.ok) {

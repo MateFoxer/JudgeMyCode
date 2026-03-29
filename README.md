@@ -1,45 +1,76 @@
 # Judge My Code
 
-Initial MVP implementation for a web app that reviews code in three modes:
-- FAANG interviewer
-- Senior dev
-- Toxic reviewer
+Paste code, pick a review mode, and get a brutally honest breakdown with practical fixes.
 
-Current implementation includes:
-- Next.js App Router + TypeScript setup
-- Code input + mode selector UI
-- File upload support for common source extensions
-- Automatic language detection from file extension and syntax heuristics
-- `/api/review` endpoint with schema validation
-- Gemini provider integration with mock fallback (`gemini`, `mock`)
-- Local JSON persistence for generated reviews (`data/reviews.json`)
-- Shareable permalink pages at `/r/[id]`
-- Baseline moderation pass for disallowed terms
+![Judge My Code preview](https://image.thum.io/get/width/1400/noanimate/https://judge-my-code.vercel.app/)
 
-## Run locally
+[Live App](https://judge-my-code.vercel.app/) · [Report an Issue](../../issues)
 
-1. Install dependencies:
+## Highlights
+
+- Three review personas: FAANG Interviewer, Senior Developer, Toxic Reviewer
+- Smart language detection from uploaded files and syntax heuristics
+- Structured scoring for quality, readability, efficiency, and maintainability
+- Shareable review pages at `/r/[id]`
+- Schema-validated API responses with moderation safeguards
+- Gemini-powered analysis through a secure server route
+
+## Tech Stack
+
+- Next.js App Router
+- TypeScript
+- Zod validation
+- Gemini API
+
+## Quick Start
+
+1. Install dependencies.
 
 ```bash
 npm install
 ```
 
-2. Optional: set environment variables in `.env.local`:
+2. Create `.env.local` (optional if you want live Gemini responses).
 
 ```bash
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.1-flash-lite-preview
+GEMINI_API_KEY=your_api_key
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
-3. Start development server:
+3. Run the development server.
 
 ```bash
 npm run dev
 ```
 
-If `GEMINI_API_KEY` is not set, the app falls back to deterministic mock reviews.
+4. Open `http://localhost:3000`.
+
+If `GEMINI_API_KEY` is missing, the app can fall back to deterministic mock reviews.
+
+## Deployment
+
+- Production: https://judge-my-code.vercel.app/
+- Platform: Vercel
+
+## Project Structure
+
+```text
+src/
+	app/
+		api/review/route.ts     # review generation endpoint
+		r/[id]/page.tsx         # shareable review page
+		page.tsx                # main UI
+	components/
+		ThemeToggle.tsx
+	lib/
+		providers.ts            # LLM provider integration
+		prompts.ts              # persona prompts
+		reviewSchema.ts         # request/response schemas
+		reviewStore.ts          # local persistence and runtime fallback
+```
 
 ## Notes
 
-- Gemini is called from the server route to keep API keys out of the browser.
-- Persistence and permalink pages are implemented; screenshot export is still pending.
+- Gemini calls run on the server so API keys stay out of the client.
+- Local development persists reviews in `data/reviews.json`.
+- In serverless environments, persistence behavior depends on runtime storage constraints.

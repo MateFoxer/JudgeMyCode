@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getReviewById } from "@/lib/reviewStore";
-import ThemeToggle from "@/components/ThemeToggle";
 
 type PageParams = {
   params: Promise<{ id: string }>;
@@ -39,7 +38,6 @@ export default async function SharedReviewPage({ params }: PageParams) {
       <section className="hero">
         <div className="hero-top">
           <h1>Shared Code Review</h1>
-          <ThemeToggle />
         </div>
         <p>
           Review #{id} in {review.mode.toUpperCase()} mode.

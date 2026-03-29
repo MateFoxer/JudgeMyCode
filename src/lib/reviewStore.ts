@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
+import { Redis } from "@upstash/redis";
 import { reviewCoreSchema, type ReviewCore } from "@/lib/reviewSchema";
 
 export type StoredReview = {
@@ -14,8 +15,23 @@ export type StoredReview = {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_FILE = path.join(DATA_DIR, "reviews.json");
+const REVIEW_TTL_SECONDS = 60 * 60 * 24 * 30;
 let fileStoreAvailable: boolean | null = null;
 let memoryStore: StoredReview[] = [];
+
+const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const redis =
+  upstashUrl && upstashToken
+    ? new Redis({
+        url: upstashUrl,
+        token: upstashToken,
+      })
+    : null;
+
+function reviewKey(id: string): string {
+  return `review:${id}`;
+}
 
 async function ensureStore(): Promise<boolean> {
   try {
@@ -102,11 +118,31 @@ export async function saveReview(input: {
     all.length = 500;
   }
 
+  if (redis) {
+    try {
+      await redis.set(reviewKey(id), entry, { ex: REVIEW_TTL_SECONDS });
+      return { id, sharePath: `/r/${id}` };
+    } catch {
+      // Fall back to local storage if Redis is temporarily unavailable.
+    }
+  }
+
   await writeStore(all);
   return { id, sharePath: `/r/${id}` };
 }
 
 export async function getReviewById(id: string): Promise<StoredReview | null> {
+  if (redis) {
+    try {
+      const item = await redis.get<StoredReview>(reviewKey(id));
+      if (item) {
+        return item;
+      }
+    } catch {
+      // Fall back to local storage if Redis is temporarily unavailable.
+    }
+  }
+
   const all = await readStore();
   const found = all.find((item) => item.id === id);
   return found ?? null;
